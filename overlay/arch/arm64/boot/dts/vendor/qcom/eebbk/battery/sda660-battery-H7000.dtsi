@@ -1,0 +1,33 @@
+/*
+ * H7000 battery: PM660 SMB2 charger + fg-gen3 fuel gauge, 8000/8020 mAh packs.
+ */
+
+/* Kill reference battery profiles */
+&mtp_batterydata {
+	/delete-node/ qcom,itech_3000mah;
+	/delete-node/ qcom,ascent_3450mah;
+};
+
+/* Import H7000 battery profiles */
+#include "fg-gen3-batterydata-3864045_vivo_h7000_atl_8000mah.dtsi"
+#include "fg-gen3-batterydata-3971033_bbk_h7000_8020mah.dtsi"
+
+&pm660_charger {
+	qcom,micro-usb;
+	qcom,fcc-max-ua = <2000000>;
+	qcom,fv-max-uv = <4400000>;
+	qcom,usb-icl-ua = <2000000>;
+	qcom,dc-icl-ua = <2000000>;
+	qcom,otg-cl-ua = <500000>;
+	qcom,sw-jeita-enable;
+	qcom,hvdcp-disable;
+	qcom,thermal-mitigation = <2000000 2000000 2000000 1500000 1000000 500000>;
+};
+
+&pm660_fg {
+	qcom,battery-data = <&mtp_batterydata>;
+};
+
+&pm660_pdphy {
+	status = "disabled";
+};
