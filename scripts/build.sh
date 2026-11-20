@@ -18,6 +18,22 @@ CMDLINE="androidboot.console=0 androidboot.hardware=qcom ehci-hcd.park=3 loop.ma
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
+setup_toolchain() {
+	# LineageOS buildroot GCC 9.3 uses the "aarch64-linux-" prefix.
+	local tc="${TOOLCHAIN_DIR:-$ROOT/tc}"
+	if [ -d "$tc/bin" ]; then
+		case ":$PATH:" in
+			*":$tc/bin:"*) ;;
+			*) export PATH="$tc/bin:$PATH" ;;
+		esac
+	fi
+	export ARCH=arm64
+	export SUBARCH=arm64
+	export CROSS_COMPILE="${CROSS_COMPILE:-aarch64-linux-}"
+	command -v "${CROSS_COMPILE}gcc" >/dev/null 2>&1 || \
+		echo "WARNING: ${CROSS_COMPILE}gcc not in PATH"
+}
+
 register_dtb() {
 	local mk="$K/arch/arm64/boot/dts/vendor/qcom/Makefile"
 	python3 - "$mk" <<'PY'
@@ -72,11 +88,14 @@ apply_overlay() {
 
 do_config() {
 	echo "== [2/4] generating .config (sdm660-perf + H7000 fragments)"
+	setup_toolchain
 	cd "$K"
 	mkdir -p "$OUT"
-	if ! make -s O="$OUT" ARCH=$ARCH sdm660-perf_defconfig; then
-		echo "   vendor defconfig target unavailable, copying file instead"
-		cp "arch/$ARCH/configs/vendor/sdm660-perf_defconfig" "$OUT/.config"
+	if ! make -s O="$OUT" ARCH=$ARCH vendor/sdm660-perf_defconfig; then
+		if ! make -s O="$OUT" ARCH=$ARCH sdm660-perf_defconfig; then
+			echo "   vendor defconfig target unavailable, copying file instead"
+			cp "arch/$ARCH/configs/vendor/sdm660-perf_defconfig" "$OUT/.config"
+		fi
 	fi
 	./scripts/kconfig/merge_config.sh -m -O "$OUT" \
 		"$OUT/.config" \
@@ -90,10 +109,8 @@ do_config() {
 
 do_build() {
 	echo "== [3/4] building kernel (jobs=$JOBS)"
+	setup_toolchain
 	cd "$K"
-	export ARCH=arm64
-	export SUBARCH=arm64
-	export CROSS_COMPILE="${CROSS_COMPILE:-aarch64-linux-gnu-}"
 	export KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST:-dsh-ci}"
 	export KBUILD_BUILD_USER="${KBUILD_BUILD_USER:-h7000}"
 	if [ "${USE_CCACHE:-0}" = "1" ] && command -v ccache >/dev/null 2>&1; then

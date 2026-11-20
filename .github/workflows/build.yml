@@ -37,7 +37,8 @@ jobs:
       - name: Fetch aarch64 GCC 9.3 toolchain
         run: |
           git clone --depth 1 -b "$TOOLCHAIN_BRANCH" "$TOOLCHAIN_REPO" tc
-          ./tc/bin/aarch64-linux-gnu-gcc --version | head -1
+          ./tc/bin/aarch64-linux-gcc --version | head -1 || true
+          ls tc/bin | grep -c . 
 
       - name: Fetch msm-4.19 base kernel
         run: |
