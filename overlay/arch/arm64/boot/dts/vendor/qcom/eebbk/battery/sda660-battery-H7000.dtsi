@@ -9,6 +9,14 @@
 #include "fg-gen3-batterydata-3864045_vivo_h7000_atl_8000mah.dtsi"
 #include "fg-gen3-batterydata-3971033_bbk_h7000_8020mah.dtsi"
 
+/* The reference MTP enables a parallel SMB1351 charger that this board does
+ * not have: disable it so the driver does not fail probing on i2c_2. */
+&i2c_2 {
+	smb1351-charger@1d {
+		status = "disabled";
+	};
+};
+
 &pm660_charger {
 	qcom,micro-usb;
 	qcom,fcc-max-ua = <2000000>;

@@ -83,7 +83,43 @@ apply_overlay() {
 	cp -a "$ROOT/overlay/." "$K/"
 	register_dtb
 	register_backlight
+	patch_base_tree
 	echo "   overlay applied"
+}
+
+# The 4.19 base tree (branch 'back') has a small number of call sites that do
+# not match their prototypes at the pinned commit.  Patch them here so the
+# tree builds; each patch is idempotent and verified.
+patch_base_tree() {
+	python3 - "$K" <<'PY'
+import os
+import sys
+
+k = sys.argv[1]
+edits = [
+    # kernel/sched/fair.c: prefer_spread_on_idle() is declared
+    #   static inline bool prefer_spread_on_idle(int cpu, bool new_ilb)
+    # in kernel/sched/walt.h, but this call site passes one argument.
+    ('kernel/sched/fair.c',
+     'prefer_spread_on_idle(this_cpu)',
+     'prefer_spread_on_idle(this_cpu, false)'),
+]
+for rel, old, new in edits:
+    path = os.path.join(k, rel)
+    if not os.path.exists(path):
+        print(f'   WARNING: {rel} missing, skipping')
+        continue
+    src = open(path, errors='surrogateescape').read()
+    if new in src and old not in src:
+        print(f'   {rel}: already patched')
+        continue
+    if old not in src:
+        print(f'   WARNING: pattern not found in {rel}')
+        continue
+    src = src.replace(old, new)
+    open(path, 'w', errors='surrogateescape').write(src)
+    print(f'   {rel}: patched ({old} -> {new})')
+PY
 }
 
 do_config() {
@@ -147,16 +183,19 @@ do_build() {
 	cd "$K"
 	export KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST:-dsh-ci}"
 	export KBUILD_BUILD_USER="${KBUILD_BUILD_USER:-h7000}"
+	# ccache has to be passed as a make command-line variable, otherwise the
+	# kernel Makefile's own "CC = $(CROSS_COMPILE)gcc" wins over the environment.
+	CCVAR=()
 	if [ "${USE_CCACHE:-0}" = "1" ] && command -v ccache >/dev/null 2>&1; then
-		export CC="ccache ${CROSS_COMPILE}gcc"
-		echo "   ccache enabled: $CC"
+		CCVAR=("CC=ccache ${CROSS_COMPILE}gcc")
+		echo "   ccache enabled: ${CCVAR[*]}"
 	fi
 	set -o pipefail
 	# dtbs first: device-tree errors surface in ~1 minute instead of after a
 	# full kernel compile.
-	make -j"$JOBS" O="$OUT" KCFLAGS="-Wno-error" dtbs </dev/null 2>&1 | tee "$ROOT/build-dtbs.log"
+	make -j"$JOBS" O="$OUT" "${CCVAR[@]}" KCFLAGS="-Wno-error" dtbs </dev/null 2>&1 | tee "$ROOT/build-dtbs.log"
 	test -f "$OUT/arch/arm64/boot/dts/vendor/qcom/eebbk/sda660-mtp-H7000.dtb"
-	make -j"$JOBS" O="$OUT" KCFLAGS="-Wno-error" Image.gz </dev/null 2>&1 | tee "$ROOT/build.log"
+	make -j"$JOBS" O="$OUT" "${CCVAR[@]}" KCFLAGS="-Wno-error" Image.gz </dev/null 2>&1 | tee "$ROOT/build.log"
 	test -f "$OUT/arch/arm64/boot/Image.gz"
 }
 
