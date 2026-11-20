@@ -101,9 +101,12 @@ do_build() {
 		echo "   ccache enabled: $CC"
 	fi
 	set -o pipefail
-	make -j"$JOBS" O="$OUT" KCFLAGS="-Wno-error" Image.gz dtbs 2>&1 | tee "$ROOT/build.log"
-	test -f "$OUT/arch/arm64/boot/Image.gz"
+	# dtbs first: device-tree errors surface in ~1 minute instead of after a
+	# full kernel compile.
+	make -j"$JOBS" O="$OUT" KCFLAGS="-Wno-error" dtbs 2>&1 | tee "$ROOT/build-dtbs.log"
 	test -f "$OUT/arch/arm64/boot/dts/vendor/qcom/eebbk/sda660-mtp-H7000.dtb"
+	make -j"$JOBS" O="$OUT" KCFLAGS="-Wno-error" Image.gz 2>&1 | tee "$ROOT/build.log"
+	test -f "$OUT/arch/arm64/boot/Image.gz"
 }
 
 do_package() {
