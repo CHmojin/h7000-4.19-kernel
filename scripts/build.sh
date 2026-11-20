@@ -117,6 +117,19 @@ edits = [
      'void restore_cgroup_boost_settings(void) {\n'
      '\tint i;\n\n'
      '\tfor (i = 0; i < BOOSTGROUPS_COUNT && allocated_group[i]; ++i) {'),
+    # drivers/input/touchscreen/focaltech_touch/focaltech_core.c: the panel
+    # lookup uses drm_panel helpers unconditionally, but this device runs the
+    # fbdev MDSS stack (CONFIG_DRM=n), where of_drm_find_panel() does not
+    # exist. Make the lookup a no-op in that case; the driver then registers
+    # its FB notifier instead of a DRM panel notifier.
+    ('drivers/input/touchscreen/focaltech_touch/focaltech_core.c',
+     'static int fts_ts_check_dt(struct device_node *np)\n{\n\tint i;',
+     'static int fts_ts_check_dt(struct device_node *np)\n{\n'
+     '#if defined(CONFIG_DRM)\n\tint i;'),
+    ('drivers/input/touchscreen/focaltech_touch/focaltech_core.c',
+     '\treturn -ENODEV;\n}\n\nstatic int fts_ts_check_default_tp',
+     '\treturn -ENODEV;\n#else\n\treturn 0;\n#endif\n}\n\n'
+     'static int fts_ts_check_default_tp'),
 ]
 for rel, old, new in edits:
     path = os.path.join(k, rel)
