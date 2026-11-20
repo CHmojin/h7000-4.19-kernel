@@ -1,0 +1,152 @@
+/*
+ * H7000 audio: PM660L internal (analog) codec + MI2S1 -> TFA9891 smart amps.
+ * The board has no SLIMbus/WCD9335/WCD934x codec and no WSA881x speakers,
+ * so the external-codec path is disabled and int_codec is used instead.
+ */
+
+&i2c_2 {
+	tfa98xx@34 {
+		compatible = "nxp,tfa98xx";
+		reg = <0x34>;
+		irq-gpio = <&tlmm 30 0x0>;
+		reset-gpio = <&tlmm 12 0x0>;
+		interrupts = <30 0x0>;
+		interrupt-names = "nxp_r_irq";
+	};
+
+	tfa98xx@35 {
+		compatible = "nxp,tfa98xx";
+		reg = <0x35>;
+		irq-gpio = <&tlmm 31 0x0>;
+		reset-gpio = <&tlmm 62 0x0>;
+		interrupts = <31 0x0>;
+		interrupt-names = "nxp_l_irq";
+	};
+};
+
+&tlmm {
+	sec_mi2s {
+		sec_mi2s_active: sec_mi2s_active {
+			mux {
+				pins = "gpio24", "gpio25";
+				function = "sec_mi2s";
+			};
+
+			config {
+				pins = "gpio24", "gpio25";
+				drive-strength = <8>;
+				bias-disable;
+			};
+		};
+
+		sec_mi2s_sleep: sec_mi2s_sleep {
+			mux {
+				pins = "gpio24", "gpio25";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio24", "gpio25";
+				drive-strength = <2>;
+				bias-disable;
+				input-enable;
+			};
+		};
+	};
+
+	sec_mi2s_sd0 {
+		sec_mi2s_sd0_active: sec_mi2s_sd0_active {
+			mux {
+				pins = "gpio26";
+				function = "sec_mi2s";
+			};
+
+			config {
+				pins = "gpio26";
+				drive-strength = <8>;
+				bias-disable;
+			};
+		};
+
+		sec_mi2s_sd0_sleep: sec_mi2s_sd0_sleep {
+			mux {
+				pins = "gpio26";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio26";
+				drive-strength = <2>;
+				bias-pull-down;
+				input-enable;
+			};
+		};
+	};
+
+	sec_mi2s_sd1 {
+		sec_mi2s_sd1_active: sec_mi2s_sd1_active {
+			mux {
+				pins = "gpio27";
+				function = "sec_mi2s";
+			};
+
+			config {
+				pins = "gpio27";
+				drive-strength = <8>;
+				bias-disable;
+			};
+		};
+
+		sec_mi2s_sd1_sleep: sec_mi2s_sd1_sleep {
+			mux {
+				pins = "gpio27";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio27";
+				drive-strength = <2>;
+				bias-pull-down;
+				input-enable;
+			};
+		};
+	};
+};
+
+&dai_mi2s1 {
+	pinctrl-names = "default", "sleep";
+	pinctrl-0 = <&sec_mi2s_active &sec_mi2s_sd0_active &sec_mi2s_sd1_active>;
+	pinctrl-1 = <&sec_mi2s_sleep &sec_mi2s_sd0_sleep &sec_mi2s_sd1_sleep>;
+	qcom,msm-mi2s-rx-lines = <1>;
+	qcom,msm-mi2s-tx-lines = <2>;
+};
+
+/*
+ * clock_audio is the only provider of LPASS MCLK for the TFA9891 amps;
+ * the reference internal-codec dtsi disables it, we must keep it enabled.
+ */
+&clock_audio {
+	status = "okay";
+};
+
+&int_codec {
+	status = "okay";
+	/delete-property/ qcom,us-euro-gpios;
+	/delete-property/ qcom,cdc-pdm-gpios;
+	/delete-property/ qcom,cdc-comp-gpios;
+	/delete-property/ qcom,cdc-dmic-gpios;
+	/* no WSA881x soundwire speakers on this board */
+	qcom,wsa-disable;
+	/* TFA9891 takes MCLK from INT_MCLK0 */
+	qcom,msm-mi2s-ext-mclk = <0 0 0 0>;
+	/* SEC_MI2S is master: LPASS drives BCLK/WS to the amps */
+	qcom,msm-mi2s-master = <0 1 0 0>;
+};
+
+&pmic_analog_codec {
+	status = "okay";
+};
+
+&msm_sdw_codec {
+	status = "okay";
+};
