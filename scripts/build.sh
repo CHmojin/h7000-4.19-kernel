@@ -142,7 +142,13 @@ do_config() {
 	cd "$K"
 	mkdir -p "$OUT"
 	# Deterministic: always start from the vendor defconfig file itself.
-	cp "arch/$ARCH/configs/vendor/sdm660-perf_defconfig" "$OUT/.config"
+	# wayne-perf (a device config the base tree is actually maintained and
+	# built against) is used instead of the stale sdm660-perf_defconfig,
+	# which enables code paths broken at branch head (SCHED_WALT,
+	# ARM64_ERRATUM_843419).
+	local basedef="${BASE_DEFCONFIG:-wayne-perf}"
+	cp "arch/$ARCH/configs/vendor/${basedef}_defconfig" "$OUT/.config"
+	echo "   base defconfig: vendor/${basedef}_defconfig"
 	./scripts/kconfig/merge_config.sh -m -O "$OUT" \
 		"$OUT/.config" \
 		"$ROOT/config/H7000.config" \
