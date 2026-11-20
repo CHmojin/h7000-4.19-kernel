@@ -91,19 +91,53 @@ do_config() {
 	setup_toolchain
 	cd "$K"
 	mkdir -p "$OUT"
-	if ! make -s O="$OUT" ARCH=$ARCH vendor/sdm660-perf_defconfig; then
-		if ! make -s O="$OUT" ARCH=$ARCH sdm660-perf_defconfig; then
-			echo "   vendor defconfig target unavailable, copying file instead"
-			cp "arch/$ARCH/configs/vendor/sdm660-perf_defconfig" "$OUT/.config"
-		fi
-	fi
+	# Deterministic: always start from the vendor defconfig file itself.
+	cp "arch/$ARCH/configs/vendor/sdm660-perf_defconfig" "$OUT/.config"
 	./scripts/kconfig/merge_config.sh -m -O "$OUT" \
 		"$OUT/.config" \
 		"$ROOT/config/H7000.config" \
 		"$ROOT/config/sdm660-common.config" || true
-	make -s O="$OUT" ARCH=$ARCH olddefconfig
+
+	# The CLO vendor defconfig leaves some int/hex symbols with an empty value.
+	# Modern kconfig rejects those and then prompts interactively, which hangs
+	# non-interactive builds, so give them explicit valid values.
+	python3 - "$OUT/.config" <<'PY'
+import re
+import sys
+
+path = sys.argv[1]
+fixes = {'LITTLE_CPU_MASK': '0', 'BIG_CPU_MASK': '0'}
+lines = open(path).read().splitlines()
+out = []
+for line in lines:
+    m = re.match(r'^CONFIG_([A-Za-z0-9_]+)=(.*)$', line)
+    if m and m.group(2).strip() == '':
+        name = m.group(1)
+        val = fixes.get(name, '0')
+        print(f'   empty value for CONFIG_{name}, forcing {val}')
+        out.append(f'CONFIG_{name}={val}')
+    else:
+        out.append(line)
+have = {re.match(r'^CONFIG_([A-Za-z0-9_]+)=', l).group(1)
+        for l in out if re.match(r'^CONFIG_([A-Za-z0-9_]+)=', l)}
+for name, val in fixes.items():
+    if name not in have:
+        print(f'   missing CONFIG_{name}, adding {val}')
+        out.append(f'CONFIG_{name}={val}')
+open(path, 'w').write('\n'.join(out) + '\n')
+PY
+
+	# stdin from /dev/null: if kconfig ever tries to prompt, fail fast instead
+	# of hanging the job.
+	make -s O="$OUT" ARCH=$ARCH olddefconfig </dev/null
+
+	if grep -nE '^CONFIG_[A-Za-z0-9_]+=$' "$OUT/.config"; then
+		echo "   WARNING: empty-valued symbols remain in .config"
+	else
+		echo "   .config has no empty-valued symbols"
+	fi
 	echo "   --- effective device config ---"
-	grep -E 'CONFIG_(TOUCHSCREEN_FTS|BACKLIGHT_KTZ8864|ARCH_SDM660|QCA_CLD_WLAN|PSTORE|LOCALVERSION)=' \
+	grep -E 'CONFIG_(TOUCHSCREEN_FTS|BACKLIGHT_KTZ8864|ARCH_SDM660|QCA_CLD_WLAN|PSTORE|LITTLE_CPU_MASK|BIG_CPU_MASK|LOCALVERSION)=' \
 		"$OUT/.config" || true
 }
 
@@ -120,9 +154,9 @@ do_build() {
 	set -o pipefail
 	# dtbs first: device-tree errors surface in ~1 minute instead of after a
 	# full kernel compile.
-	make -j"$JOBS" O="$OUT" KCFLAGS="-Wno-error" dtbs 2>&1 | tee "$ROOT/build-dtbs.log"
+	make -j"$JOBS" O="$OUT" KCFLAGS="-Wno-error" dtbs </dev/null 2>&1 | tee "$ROOT/build-dtbs.log"
 	test -f "$OUT/arch/arm64/boot/dts/vendor/qcom/eebbk/sda660-mtp-H7000.dtb"
-	make -j"$JOBS" O="$OUT" KCFLAGS="-Wno-error" Image.gz 2>&1 | tee "$ROOT/build.log"
+	make -j"$JOBS" O="$OUT" KCFLAGS="-Wno-error" Image.gz </dev/null 2>&1 | tee "$ROOT/build.log"
 	test -f "$OUT/arch/arm64/boot/Image.gz"
 }
 
