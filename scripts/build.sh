@@ -103,6 +103,20 @@ edits = [
     ('kernel/sched/fair.c',
      'prefer_spread_on_idle(this_cpu)',
      'prefer_spread_on_idle(this_cpu, false)'),
+    # kernel/sched/tune.c: two C99 for-loop declarations; the kernel is built
+    # with -std=gnu89, so declare the index up front.
+    ('kernel/sched/tune.c',
+     'void update_cgroup_boost_settings(void) {\n'
+     '\tfor (int i = 0; i < BOOSTGROUPS_COUNT && allocated_group[i]; ++i) {',
+     'void update_cgroup_boost_settings(void) {\n'
+     '\tint i;\n\n'
+     '\tfor (i = 0; i < BOOSTGROUPS_COUNT && allocated_group[i]; ++i) {'),
+    ('kernel/sched/tune.c',
+     'void restore_cgroup_boost_settings(void) {\n'
+     '\tfor (int i = 0; i < BOOSTGROUPS_COUNT && allocated_group[i]; ++i) {',
+     'void restore_cgroup_boost_settings(void) {\n'
+     '\tint i;\n\n'
+     '\tfor (i = 0; i < BOOSTGROUPS_COUNT && allocated_group[i]; ++i) {'),
 ]
 for rel, old, new in edits:
     path = os.path.join(k, rel)
