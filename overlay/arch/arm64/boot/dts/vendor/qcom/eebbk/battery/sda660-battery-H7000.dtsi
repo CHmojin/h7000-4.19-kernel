@@ -1,12 +1,9 @@
 /*
  * H7000 battery: PM660 SMB2 charger + fg-gen3 fuel gauge, 8000/8020 mAh packs.
+ *
+ * Note: unlike sdm630-mtp.dtsi, the sdm660 reference mtp dtsi ships no default
+ * battery profiles, so nothing has to be deleted before adding ours.
  */
-
-/* Kill reference battery profiles */
-&mtp_batterydata {
-	/delete-node/ qcom,itech_3000mah;
-	/delete-node/ qcom,ascent_3450mah;
-};
 
 /* Import H7000 battery profiles */
 #include "fg-gen3-batterydata-3864045_vivo_h7000_atl_8000mah.dtsi"

@@ -18,48 +18,55 @@ CMDLINE="androidboot.console=0 androidboot.hardware=qcom ehci-hcd.park=3 loop.ma
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
+register_dtb() {
+	local mk="$K/arch/arm64/boot/dts/vendor/qcom/Makefile"
+	python3 - "$mk" <<'PY'
+import re
+import sys
+
+path = sys.argv[1]
+src = open(path).read()
+entry = 'dtb-$(CONFIG_ARCH_SDM660) += eebbk/sda660-mtp-H7000.dtb'
+if entry in src:
+    print('   dtb entry already present')
+    sys.exit(0)
+pat = re.compile(r'(?m)^(always[ \t]*:=[ \t]*\$\(dtb-y\))')
+new, count = pat.subn(lambda m: entry + '\n' + m.group(1), src, count=1)
+if count != 1:
+    sys.exit('cannot find "always := $(dtb-y)" in ' + path)
+open(path, 'w').write(new)
+print('   dtb entry inserted')
+PY
+}
+
+register_backlight() {
+	local kconfig="$K/drivers/video/backlight/Kconfig"
+	local makefile="$K/drivers/video/backlight/Makefile"
+
+	if ! grep -q 'BACKLIGHT_KTZ8864' "$kconfig"; then
+		{
+			printf '\n'
+			printf 'config BACKLIGHT_KTZ8864\n'
+			printf '\ttristate "KTZ8864 backlight controller init driver"\n'
+			printf '\tdepends on I2C\n'
+			printf '\thelp\n'
+			printf '\t  Minimal I2C driver for the KTZ8864 LCD backlight controller\n'
+			printf '\t  (PWM dimming) used on the BBK S5 (H7000).\n'
+		} >>"$kconfig"
+		echo '   Kconfig: BACKLIGHT_KTZ8864 added'
+	fi
+	if ! grep -q 'ktz8864' "$makefile"; then
+		echo 'obj-$(CONFIG_BACKLIGHT_KTZ8864) += ktz8864.o' >>"$makefile"
+		echo '   Makefile: ktz8864.o added'
+	fi
+}
+
 apply_overlay() {
 	echo "== [1/4] applying device overlay into $K"
 	[ -d "$K" ] || die "kernel tree not found: $K"
 	cp -a "$ROOT/overlay/." "$K/"
-
-	# Register the H7000 dtb.  The vendor dts Makefile accumulates dtb-y and
-	# then snapshots it in 'always := $(dtb-y)', so the entry must be
-	# inserted *before* that line.
-	local mk="$K/arch/arm64/boot/dts/vendor/qcom/Makefile"
-	python3 - "$mk" <<-'PY'
-	import re, sys
-	p = sys.argv[1]
-	s = open(p).read()
-	line = 'dtb-$(CONFIG_ARCH_SDM660) += eebbk/sda660-mtp-H7000.dtb'
-	if line in s:
-	    print('   dtb entry already present')
-	else:
-	    s2, n = re.subn(r'(?m)^always\s*:=\s*\$\(dtb-y\)',
-	                    line + r'\n\1', s, count=1)
-	    if n != 1:
-	        sys.exit('cannot find "always := $(dtb-y)" in ' + p)
-	    open(p, 'w').write(s2)
-	    print('   inserted dtb entry')
-	PY
-
-	# Backlight driver (KTZ8864 init driver) registration
-	local blk="$K/drivers/video/backlight/Kconfig"
-	local blm="$K/drivers/video/backlight/Makefile"
-	if ! grep -q 'BACKLIGHT_KTZ8864' "$blk"; then
-		cat >>"$blk" <<-'EOF'
-
-		config BACKLIGHT_KTZ8864
-			tristate "KTZ8864 backlight controller init driver"
-			depends on I2C
-			help
-			  Minimal I2C driver for the KTZ8864 LCD backlight controller
-			  (PWM dimming) used on the BBK S5 (H7000).
-		EOF
-	fi
-	if ! grep -q 'ktz8864' "$blm"; then
-		echo 'obj-$(CONFIG_BACKLIGHT_KTZ8864) += ktz8864.o' >>"$blm"
-	fi
+	register_dtb
+	register_backlight
 	echo "   overlay applied"
 }
 
@@ -68,7 +75,7 @@ do_config() {
 	cd "$K"
 	mkdir -p "$OUT"
 	if ! make -s O="$OUT" ARCH=$ARCH sdm660-perf_defconfig; then
-		echo "   vendor defconfig target unavailable, copying file"
+		echo "   vendor defconfig target unavailable, copying file instead"
 		cp "arch/$ARCH/configs/vendor/sdm660-perf_defconfig" "$OUT/.config"
 	fi
 	./scripts/kconfig/merge_config.sh -m -O "$OUT" \
@@ -76,13 +83,16 @@ do_config() {
 		"$ROOT/config/H7000.config" \
 		"$ROOT/config/sdm660-common.config" || true
 	make -s O="$OUT" ARCH=$ARCH olddefconfig
-	grep -E 'CONFIG_(TOUCHSCREEN_FTS|BACKLIGHT_KTZ8864|ARCH_SDM660|LOCALVERSION)=' "$OUT/.config" || true
+	echo "   --- effective device config ---"
+	grep -E 'CONFIG_(TOUCHSCREEN_FTS|BACKLIGHT_KTZ8864|ARCH_SDM660|QCA_CLD_WLAN|PSTORE|LOCALVERSION)=' \
+		"$OUT/.config" || true
 }
 
 do_build() {
 	echo "== [3/4] building kernel (jobs=$JOBS)"
 	cd "$K"
-	export ARCH SUBARCH=$ARCH
+	export ARCH=arm64
+	export SUBARCH=arm64
 	export CROSS_COMPILE="${CROSS_COMPILE:-aarch64-linux-gnu-}"
 	export KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST:-dsh-ci}"
 	export KBUILD_BUILD_USER="${KBUILD_BUILD_USER:-h7000}"
@@ -90,6 +100,7 @@ do_build() {
 		export CC="ccache ${CROSS_COMPILE}gcc"
 		echo "   ccache enabled: $CC"
 	fi
+	set -o pipefail
 	make -j"$JOBS" O="$OUT" KCFLAGS="-Wno-error" Image.gz dtbs 2>&1 | tee "$ROOT/build.log"
 	test -f "$OUT/arch/arm64/boot/Image.gz"
 	test -f "$OUT/arch/arm64/boot/dts/vendor/qcom/eebbk/sda660-mtp-H7000.dtb"
